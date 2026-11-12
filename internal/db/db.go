@@ -33,7 +33,7 @@ func Open(kind, dsn string) (*gorm.DB, error) {
 	if kind == "sqlite" {
 		sql.SetMaxOpenConns(1)
 	}
-	if err = d.AutoMigrate(&model.User{}, &model.Setting{}, &model.AuditLog{}, &model.Ticket{}, &model.TicketEvent{}, &model.Channel{}, &model.NotifyRule{}, &model.Subscription{}, &model.Notification{}, &model.NotifyJob{}); err != nil {
+	if err = d.AutoMigrate(&model.User{}, &model.Setting{}, &model.AuditLog{}, &model.Ticket{}, &model.TicketEvent{}, &model.Channel{}, &model.NotifyRule{}, &model.Subscription{}, &model.Notification{}, &model.NotifyJob{}, &model.MailAccount{}, &model.UpstreamAccount{}, &model.MailRule{}, &model.Collector{}, &model.SyncLog{}); err != nil {
 		_ = sql.Close()
 		return nil, err
 	}

@@ -16,20 +16,26 @@ import (
 	"github.com/reputationly/ticket-hub/internal/auth"
 	"github.com/reputationly/ticket-hub/internal/cache"
 	"github.com/reputationly/ticket-hub/internal/config"
+	"github.com/reputationly/ticket-hub/internal/mailwatch"
 	"github.com/reputationly/ticket-hub/internal/model"
 	"github.com/reputationly/ticket-hub/internal/notifier"
+	"github.com/reputationly/ticket-hub/internal/syncer"
 	"github.com/reputationly/ticket-hub/internal/ticket"
+	"github.com/reputationly/ticket-hub/internal/upstream"
 	"github.com/reputationly/ticket-hub/web"
 	"gorm.io/gorm"
 )
 
 type Server struct {
-	db      *gorm.DB
-	cache   cache.Cache
-	auth    *auth.Service
-	config  config.Config
-	notify  *notifier.Service
-	tickets *ticket.Service
+	db       *gorm.DB
+	cache    cache.Cache
+	auth     *auth.Service
+	config   config.Config
+	notify   *notifier.Service
+	tickets  *ticket.Service
+	mail     *mailwatch.Hub
+	upstream *upstream.Service
+	syncer   *syncer.Scheduler
 }
 type response struct {
 	Code    string `json:"code"`
@@ -44,10 +50,18 @@ func fail(c *gin.Context, status int, code, message string) {
 func internal(c *gin.Context) { fail(c, 500, "internal_error", "服务暂不可用") }
 
 func New(d *gorm.DB, store cache.Cache, cfg config.Config, services ...*notifier.Service) *gin.Engine {
-	s := &Server{db: d, cache: store, auth: auth.New(cfg.Secret), config: cfg}
+	var notify *notifier.Service
 	if len(services) > 0 {
-		s.notify = services[0]
+		notify = services[0]
 	}
+	return NewWithUpstream(d, store, cfg, notify, nil, nil, nil)
+}
+func NewWithUpstream(d *gorm.DB, store cache.Cache, cfg config.Config, notify *notifier.Service, mail *mailwatch.Hub, accounts *upstream.Service, scheduler *syncer.Scheduler) *gin.Engine {
+	s := &Server{db: d, cache: store, auth: auth.New(cfg.Secret), config: cfg}
+	s.notify = notify
+	s.mail = mail
+	s.upstream = accounts
+	s.syncer = scheduler
 	s.tickets = &ticket.Service{DB: d, Cache: store, Dispatcher: s.notify}
 	if s.notify == nil {
 		s.tickets.Dispatcher = nil
@@ -129,6 +143,7 @@ func New(d *gorm.DB, store cache.Cache, cfg config.Config, services ...*notifier
 	admin.PUT("/settings", s.putSettings)
 	admin.GET("/audit-logs", s.auditLogs)
 	s.notificationRoutes(secured, admin)
+	s.upstreamRoutes(admin)
 	r.NoRoute(func(c *gin.Context) {
 		if c.Request.URL.Path == "/api" || strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			fail(c, 404, "not_found", "接口不存在")

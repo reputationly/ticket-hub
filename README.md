@@ -1,6 +1,6 @@
-# 工单中心：后端与通知
+# 工单中心：后端、通知与上游同步框架
 
-已实现账号、用户管理、工单查询、多渠道通知、规则与订阅、可靠任务队列；没有前端、上游采集或回写功能。需求原文见 `docs/design.md`，通知接口与使用说明见 [docs/notifications.md](docs/notifications.md)。
+已实现账号、用户管理、工单查询、多渠道通知、规则与订阅、可靠任务队列、邮件监听与上游同步框架。真实 Dora 业务采集待抓包，目前仅支持开发模式 mock；没有前端或回写功能。需求原文见 `docs/design.md`，通知说明见 [docs/notifications.md](docs/notifications.md)，同步配置见 [docs/upstream.md](docs/upstream.md)。
 
 ## 启动
 

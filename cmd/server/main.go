@@ -7,17 +7,23 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/reputationly/ticket-hub/internal/api"
 	"github.com/reputationly/ticket-hub/internal/cache"
+	"github.com/reputationly/ticket-hub/internal/collector"
 	"github.com/reputationly/ticket-hub/internal/config"
 	"github.com/reputationly/ticket-hub/internal/crypto"
 	"github.com/reputationly/ticket-hub/internal/db"
+	"github.com/reputationly/ticket-hub/internal/mailwatch"
 	"github.com/reputationly/ticket-hub/internal/notifier"
 	"github.com/reputationly/ticket-hub/internal/queue"
 	"github.com/reputationly/ticket-hub/internal/sender"
+	"github.com/reputationly/ticket-hub/internal/syncer"
+	"github.com/reputationly/ticket-hub/internal/ticket"
+	"github.com/reputationly/ticket-hub/internal/upstream"
 )
 
 func main() {
@@ -64,10 +70,26 @@ func run() error {
 	}
 	defer q.Close()
 	notify := notifier.New(d, store, cipher, q, sender.New(d, store, sender.Options{}))
-	server := &http.Server{Addr: cfg.Address, Handler: api.New(d, store, cfg, notify), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	if err = collector.Seed(d); err != nil {
+		return err
+	}
+	mail := mailwatch.New(d, cipher)
+	accounts := &upstream.Service{DB: d, Cache: store, Cipher: cipher, Waiter: mail, DevMode: cfg.DevMode}
+	tickets := &ticket.Service{DB: d, Cache: store, Dispatcher: notify}
+	scheduler := syncer.New(d, store, collector.NewRegistry(), accounts, tickets, cfg.DevMode)
+	mail.Trigger = func(ctx context.Context, kind string) error { return scheduler.Trigger(ctx, kind, "mail") }
+	server := &http.Server{Addr: cfg.Address, Handler: api.NewWithUpstream(d, store, cfg, notify, mail, accounts, scheduler), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	workerCtx, stopWorker := context.WithCancel(context.Background())
 	workerDone := make(chan struct{})
-	go func() { defer close(workerDone); notify.Run(workerCtx) }()
+	go func() {
+		defer close(workerDone)
+		var wg sync.WaitGroup
+		for _, run := range []func(context.Context){notify.Run, mail.Run, accounts.Run, scheduler.Run} {
+			wg.Add(1)
+			go func(run func(context.Context)) { defer wg.Done(); run(workerCtx) }(run)
+		}
+		wg.Wait()
+	}()
 	defer func() { stopWorker(); <-workerDone }()
 	stop, done := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer done()
