@@ -13,7 +13,11 @@ import (
 	"github.com/reputationly/ticket-hub/internal/api"
 	"github.com/reputationly/ticket-hub/internal/cache"
 	"github.com/reputationly/ticket-hub/internal/config"
+	"github.com/reputationly/ticket-hub/internal/crypto"
 	"github.com/reputationly/ticket-hub/internal/db"
+	"github.com/reputationly/ticket-hub/internal/notifier"
+	"github.com/reputationly/ticket-hub/internal/queue"
+	"github.com/reputationly/ticket-hub/internal/sender"
 )
 
 func main() {
@@ -47,7 +51,24 @@ func run() error {
 	if err = db.Bootstrap(d, cfg.AdminUsername, cfg.AdminPassword); err != nil {
 		return err
 	}
-	server := &http.Server{Addr: cfg.Address, Handler: api.New(d, store, cfg), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	cipher, err := crypto.New(cfg.Secret)
+	if err != nil {
+		return err
+	}
+	var q queue.Queue = queue.NewMemory()
+	if cfg.RedisURL != "" {
+		q, err = queue.NewRedis(ctx, cfg.RedisURL, "ticket-hub:notify")
+		if err != nil {
+			return err
+		}
+	}
+	defer q.Close()
+	notify := notifier.New(d, store, cipher, q, sender.New(d, store, sender.Options{}))
+	server := &http.Server{Addr: cfg.Address, Handler: api.New(d, store, cfg, notify), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	workerDone := make(chan struct{})
+	go func() { defer close(workerDone); notify.Run(workerCtx) }()
+	defer func() { stopWorker(); <-workerDone }()
 	stop, done := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer done()
 	result := make(chan error, 1)

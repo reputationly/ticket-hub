@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"log/slog"
@@ -16,15 +17,19 @@ import (
 	"github.com/reputationly/ticket-hub/internal/cache"
 	"github.com/reputationly/ticket-hub/internal/config"
 	"github.com/reputationly/ticket-hub/internal/model"
+	"github.com/reputationly/ticket-hub/internal/notifier"
+	"github.com/reputationly/ticket-hub/internal/ticket"
 	"github.com/reputationly/ticket-hub/web"
 	"gorm.io/gorm"
 )
 
 type Server struct {
-	db     *gorm.DB
-	cache  cache.Cache
-	auth   *auth.Service
-	config config.Config
+	db      *gorm.DB
+	cache   cache.Cache
+	auth    *auth.Service
+	config  config.Config
+	notify  *notifier.Service
+	tickets *ticket.Service
 }
 type response struct {
 	Code    string `json:"code"`
@@ -38,8 +43,20 @@ func fail(c *gin.Context, status int, code, message string) {
 }
 func internal(c *gin.Context) { fail(c, 500, "internal_error", "服务暂不可用") }
 
-func New(d *gorm.DB, store cache.Cache, cfg config.Config) *gin.Engine {
+func New(d *gorm.DB, store cache.Cache, cfg config.Config, services ...*notifier.Service) *gin.Engine {
 	s := &Server{db: d, cache: store, auth: auth.New(cfg.Secret), config: cfg}
+	if len(services) > 0 {
+		s.notify = services[0]
+	}
+	s.tickets = &ticket.Service{DB: d, Cache: store, Dispatcher: s.notify}
+	if s.notify == nil {
+		s.tickets.Dispatcher = nil
+	} else {
+		s.notify.PublicURL = func(ctx context.Context) (string, error) {
+			settings, e := s.settings(ctx)
+			return settings.PublicURL, e
+		}
+	}
 	r := gin.New()
 	_ = r.SetTrustedProxies(nil)
 	r.Use(func(c *gin.Context) {
@@ -111,6 +128,7 @@ func New(d *gorm.DB, store cache.Cache, cfg config.Config) *gin.Engine {
 	admin.GET("/settings", s.getSettings)
 	admin.PUT("/settings", s.putSettings)
 	admin.GET("/audit-logs", s.auditLogs)
+	s.notificationRoutes(secured, admin)
 	r.NoRoute(func(c *gin.Context) {
 		if c.Request.URL.Path == "/api" || strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			fail(c, 404, "not_found", "接口不存在")

@@ -1,6 +1,6 @@
-# 工单中心：后端骨架
+# 工单中心：后端与通知
 
-本步仅实现账号、用户管理、站点设置与基础设施；没有前端、通知、上游采集或回写功能。需求原文见 `docs/design.md`。
+已实现账号、用户管理、工单查询、多渠道通知、规则与订阅、可靠任务队列；没有前端、上游采集或回写功能。需求原文见 `docs/design.md`，通知接口与使用说明见 [docs/notifications.md](docs/notifications.md)。
 
 ## 启动
 
@@ -50,7 +50,7 @@
 
 `internal/cache.Cache` 包括 Get/Set/Del、带所有权令牌的 Lock/Unlock、固定窗口 Incr、Pub/Sub。TTL 必须为正数。锁过期后旧持有者不能删除新锁；锁不自动续租。Pub/Sub 为临时广播、不是持久队列；内存订阅缓冲 64 条，慢消费者可能丢消息，不用于可靠任务传递。
 
-`internal/crypto.New(APP_SECRET_KEY)` 派生独立用途的 AES-256-GCM 密钥，Encrypt/Decrypt 使用随机 nonce 和认证数据。JWT 签名使用另一用途派生密钥。后续渠道配置需调用该工具；本步没有渠道表或密钥 API。
+`internal/crypto.New(APP_SECRET_KEY)` 派生独立用途的 AES-256-GCM 密钥，Encrypt/Decrypt 使用随机 nonce 和认证数据。JWT 签名使用另一用途派生密钥。渠道密钥加密落库、API 打码回显。
 
 ## 校验
 
@@ -58,6 +58,8 @@
 go vet ./... && go test ./...
 # PostgreSQL 使用测试专用数据库，AutoMigrate 创建表，测试写入在事务结束时回滚。
 TEST_PG_DSN='postgres://...' go test ./internal/api -run TestPostgresHandlers -v
+TEST_PG_DSN='postgres://...' TEST_REDIS_URL='redis://127.0.0.1:6379/15' go test ./...
+TEST_PG_DSN='postgres://...' TEST_REDIS_URL='redis://127.0.0.1:6379/15' go test -v ./... -run 'PG|Postgres|Redis'
 ```
 
 handler 测试使用 SQLite 内存数据库和内存缓存，覆盖登录、退出后旧令牌拒绝、限次、权限、密码变更、用户增删改查/禁用/重置、最后管理员保护、设置缓存、审计与错误请求。另有缓存和 AES-GCM 工具测试。

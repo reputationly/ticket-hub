@@ -10,6 +10,7 @@ type User struct {
 	Role         string    `json:"role" gorm:"size:16;not null"`
 	Phone        string    `json:"phone"`
 	Email        string    `json:"email"`
+	FeishuOpenID string    `json:"feishu_open_id"`
 	Enabled      bool      `json:"enabled"`
 	AuthVersion  uint      `json:"-"`
 	CreatedAt    time.Time `json:"created_at"`
