@@ -1,10 +1,12 @@
-# 工单中心：后端、通知与上游同步框架
+# 工单中心：同步与提醒工作空间
 
-已实现账号、用户管理、工单查询、多渠道通知、规则与订阅、可靠任务队列、邮件监听与上游同步框架。真实 Dora 业务采集待抓包，目前仅支持开发模式 mock；没有前端或回写功能。需求原文见 `docs/design.md`，通知说明见 [docs/notifications.md](docs/notifications.md)，同步配置见 [docs/upstream.md](docs/upstream.md)。
+已实现响应式中文工作台、账号、用户管理、工单查询、多渠道通知、规则与订阅、可靠任务队列、邮件监听与上游同步框架。真实 Dora 业务采集待抓包，目前仅支持开发模式 mock；本系统不回写上游。需求原文见 `docs/design.md`，通知说明见 [docs/notifications.md](docs/notifications.md)，同步配置见 [docs/upstream.md](docs/upstream.md)，前端开发见 [docs/frontend.md](docs/frontend.md)。
 
 ## 启动
 
 需要 Go 1.25+（当前依赖版本）。SQLite 使用纯 Go 驱动，无需 CGO。
+
+前端需要 Node.js 22.12+ 和 pnpm。首次执行 `pnpm --dir web install`，然后 `make build` 会先构建 React 到 `web/dist`，再将静态资源嵌入 `bin/ticket-hub`。构建产物不提交；只运行后端测试无需 Node.js，未构建时保留静态占位。
 
 通过环境变量设置 `.env.example` 中的配置后执行 `make run`。程序不自动读取 `.env`，没有默认管理员密码；首次启动数据库无用户时必须提供管理员用户名与 12~72 字节密码。`APP_SECRET_KEY` 至少 32 字节，建议使用随机生成的高熵密钥，切勿提交到仓库。
 

@@ -18,6 +18,7 @@ import (
 	"github.com/reputationly/ticket-hub/internal/config"
 	"github.com/reputationly/ticket-hub/internal/db"
 	"github.com/reputationly/ticket-hub/internal/model"
+	"github.com/reputationly/ticket-hub/web"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -215,7 +216,17 @@ func TestSettingsAndRoutes(t *testing.T) {
 	}
 	status(t, request(t, f.router, "GET", "/healthz", "", nil), 200)
 	status(t, request(t, f.router, "GET", "/api/missing", "", nil), 404)
-	status(t, request(t, f.router, "GET", "/some/page", "", nil), 404)
+	w = request(t, f.router, "GET", "/some/page", "", nil)
+	if _, err := web.Files.ReadFile("dist/index.html"); err == nil {
+		if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+			t.Fatalf("SPA 响应错误：%d %s", w.Code, w.Header().Get("Content-Type"))
+		}
+		if !strings.Contains(w.Body.String(), `id="root"`) {
+			t.Fatal("SPA 回退未返回前端入口")
+		}
+	} else {
+		status(t, w, 404)
+	}
 	req := httptest.NewRequest("PUT", "/api/admin/settings", strings.NewReader(`{}`))
 	req.Header.Set("Origin", "https://evil.example")
 	req.AddCookie(admin)
