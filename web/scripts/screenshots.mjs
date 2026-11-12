@@ -13,6 +13,10 @@ const browser = await chromium.launch({ headless: true });
 const errors = [];
 async function login(page) {
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 500)
+      errors.push(`${response.status()} ${response.url()}`);
+  });
   await page.goto(`${base}/login`);
   await page
     .getByLabel("用户名", { exact: true })
@@ -20,7 +24,11 @@ async function login(page) {
   await page
     .getByLabel("密码", { exact: true })
     .fill(process.env.ADMIN_PASSWORD);
+  const catalog = page.waitForResponse((response) =>
+    response.url().endsWith("/api/catalog"),
+  );
   await page.getByRole("button", { name: "登录工作空间" }).click();
+  expect((await catalog).ok()).toBe(true);
   await page.waitForURL("**/tickets");
   await expect(
     page.locator(".ticket-title, .ticket-card").first(),

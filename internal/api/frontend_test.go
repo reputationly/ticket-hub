@@ -30,9 +30,12 @@ func TestFrontendMetadata(t *testing.T) {
 	if e := f.db.Create(&model.Ticket{Kind: "fault_repair", UpstreamID: "CAT-1", Title: "目录", Site: "测试机房", Status: "待认领"}).Error; e != nil {
 		t.Fatal(e)
 	}
+	if e := f.db.Create(&model.Ticket{Kind: "fault_repair", UpstreamID: "CAT-2", Title: "无机房工单", Status: "待检查"}).Error; e != nil {
+		t.Fatal(e)
+	}
 	w = request(t, f.router, "GET", "/api/catalog", "", admin)
 	status(t, w, 200)
-	if !strings.Contains(w.Body.String(), "测试机房") || !strings.Contains(w.Body.String(), "故障维修") {
+	if !strings.Contains(w.Body.String(), "测试机房") || !strings.Contains(w.Body.String(), "故障维修") || !strings.Contains(w.Body.String(), "待检查") {
 		t.Fatal(w.Body.String())
 	}
 	create(t, f, admin, "catalog-user", "user")

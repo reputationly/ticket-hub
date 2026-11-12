@@ -1,18 +1,16 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
-import {
-  App as AntApp,
-  Avatar,
-  Badge,
-  Button,
-  ConfigProvider,
-  Dropdown,
-  Menu,
-  Result,
-  Spin,
-  Tooltip,
-  message,
-} from "antd";
+import AntApp from "antd/es/app";
+import Avatar from "antd/es/avatar";
+import Badge from "antd/es/badge";
+import Button from "antd/es/button";
+import ConfigProvider from "antd/es/config-provider";
+import Dropdown from "antd/es/dropdown";
+import Menu from "antd/es/menu";
+import Result from "antd/es/result";
+import Spin from "antd/es/spin";
+import Tooltip from "antd/es/tooltip";
+import message from "antd/es/message";
 import zhCN from "antd/locale/zh_CN";
 import {
   BellOutlined,
@@ -44,11 +42,32 @@ import {
 } from "./api";
 import { Hub, useHub } from "./context";
 import { useMobile } from "./common";
-import { Login, Messages, Profile, TicketDetail, Tickets } from "./pages";
-import { AdminMenu, ResourcePage, SiteSettings } from "./management";
 import { resources } from "./schemas";
 import "dayjs/locale/zh-cn";
 import "./style.css";
+
+const Login = lazy(() => import("./Login").then((m) => ({ default: m.Login })));
+const Tickets = lazy(() =>
+  import("./Tickets").then((m) => ({ default: m.Tickets })),
+);
+const TicketDetail = lazy(() =>
+  import("./TicketDetail").then((m) => ({ default: m.TicketDetail })),
+);
+const Messages = lazy(() =>
+  import("./Messages").then((m) => ({ default: m.Messages })),
+);
+const Profile = lazy(() =>
+  import("./Profile").then((m) => ({ default: m.Profile })),
+);
+const AdminMenu = lazy(() =>
+  import("./management").then((m) => ({ default: m.AdminMenu })),
+);
+const ResourcePage = lazy(() =>
+  import("./management").then((m) => ({ default: m.ResourcePage })),
+);
+const SiteSettings = lazy(() =>
+  import("./management").then((m) => ({ default: m.SiteSettings })),
+);
 
 function Application() {
   const navigate = useNavigate();
@@ -144,76 +163,87 @@ function Application() {
       </div>
     );
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={
-          user ? (
-            <Navigate to="/tickets" replace />
-          ) : (
-            <Login site={site} onLogin={setUser} />
-          )
-        }
-      />
-      <Route
-        element={
-          user ? (
-            <Hub.Provider
-              value={{
-                user,
-                setUser,
-                site,
-                reloadSite,
-                catalog,
-                unread,
-                refreshUnread,
-                revision,
-                live,
-              }}
-            >
-              <Shell />
-            </Hub.Provider>
-          ) : (
-            <Navigate to="/login" replace />
-          )
-        }
-      >
-        <Route index element={<Navigate to="/tickets" replace />} />
-        <Route path="tickets" element={<Tickets />} />
-        <Route path="tickets/:id" element={<TicketDetail />} />
-        <Route path="messages" element={<Messages />} />
-        <Route path="me" element={<Profile />} />
+    <Suspense
+      fallback={
+        <div className="boot">
+          <Spin />
+          <p>正在加载页面…</p>
+        </div>
+      }
+    >
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            user ? (
+              <Navigate to="/tickets" replace />
+            ) : (
+              <Login site={site} onLogin={setUser} />
+            )
+          }
+        />
         <Route
           element={
-            user?.role === "admin" ? (
-              <Outlet />
+            user ? (
+              <Hub.Provider
+                value={{
+                  user,
+                  setUser,
+                  site,
+                  reloadSite,
+                  catalog,
+                  unread,
+                  refreshUnread,
+                  revision,
+                  live,
+                }}
+              >
+                <Shell />
+              </Hub.Provider>
             ) : (
-              <Result status="403" title="仅管理员可访问" />
+              <Navigate to="/login" replace />
             )
           }
         >
-          <Route path="admin" element={<AdminMenu />} />
-          <Route path="admin/settings" element={<SiteSettings />} />
-          {resources.map((resource) => (
-            <Route
-              key={resource.key}
-              path={`admin/${resource.key}`}
-              element={<ResourcePage key={resource.key} resource={resource} />}
-            />
-          ))}
+          <Route index element={<Navigate to="/tickets" replace />} />
+          <Route path="tickets" element={<Tickets />} />
+          <Route path="tickets/:id" element={<TicketDetail />} />
+          <Route path="messages" element={<Messages />} />
+          <Route path="me" element={<Profile />} />
+          <Route
+            element={
+              user?.role === "admin" ? (
+                <Outlet />
+              ) : (
+                <Result status="403" title="仅管理员可访问" />
+              )
+            }
+          >
+            <Route path="admin" element={<AdminMenu />} />
+            <Route path="admin/settings" element={<SiteSettings />} />
+            {resources.map((resource) => (
+              <Route
+                key={resource.key}
+                path={`admin/${resource.key}`}
+                element={
+                  <ResourcePage key={resource.key} resource={resource} />
+                }
+              />
+            ))}
+          </Route>
+          <Route
+            path="*"
+            element={
+              <Result
+                status="404"
+                title="页面不存在"
+                extra={<Link to="/tickets">返回工单</Link>}
+              />
+            }
+          />
         </Route>
-        <Route
-          path="*"
-          element={
-            <Result
-              status="404"
-              title="页面不存在"
-              extra={<Link to="/tickets">返回工单</Link>}
-            />
-          }
-        />
-      </Route>
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
 function Brand() {

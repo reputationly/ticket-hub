@@ -275,6 +275,14 @@ func TestPostgresHandlers(t *testing.T) {
 	status(t, request(t, f.router, "PUT", "/api/admin/settings", `{"site_name":"PG测试","session_hours":12}`, cookie), 200)
 	status(t, request(t, f.router, "GET", "/api/admin/settings", "", cookie), 200)
 	status(t, request(t, f.router, "GET", "/api/admin/audit-logs", "", cookie), 200)
+	if err = tx.Create(&model.Ticket{Kind: "fault_repair", UpstreamID: name, Title: "PG 目录测试", Status: name + "_待检查"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	w := request(t, f.router, "GET", "/api/catalog", "", cookie)
+	status(t, w, 200)
+	if !strings.Contains(w.Body.String(), name+"_待检查") {
+		t.Fatal("未返回无机房工单状态：", w.Body.String())
+	}
 	status(t, request(t, f.router, "POST", "/api/auth/logout", "", cookie), 200)
 	status(t, request(t, f.router, "GET", "/api/auth/me", "", cookie), 401)
 }

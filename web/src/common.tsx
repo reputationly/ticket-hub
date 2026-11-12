@@ -1,5 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Alert, Button, Empty, Spin, Tag } from "antd";
+import Alert from "antd/es/alert";
+import Button from "antd/es/button";
+import Empty from "antd/es/empty";
+import Spin from "antd/es/spin";
+import Tag from "antd/es/tag";
 import { ReloadOutlined } from "@ant-design/icons";
 export function useMobile() {
   const [mobile, setMobile] = useState(window.innerWidth < 768);

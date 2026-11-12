@@ -1,67 +1,165 @@
-# 工单中心：同步与提醒工作空间
+# 工单中心：只读同步与多渠道提醒
 
-已实现响应式中文工作台、账号、用户管理、工单查询、多渠道通知、规则与订阅、可靠任务队列、邮件监听与上游同步框架。真实 Dora 业务采集待抓包，目前仅支持开发模式 mock；本系统不回写上游。需求原文见 `docs/design.md`，通知说明见 [docs/notifications.md](docs/notifications.md)，同步配置见 [docs/upstream.md](docs/upstream.md)，前端开发见 [docs/frontend.md](docs/frontend.md)。
+面向供应商运维团队的 Go 单体服务。集中同步上游工单、记录变化并分发提醒；**不提供认领、处理、审批、结单或回写上游的能力**。
 
-## 启动
+> 真实 Dora 工单接口尚未授权抓包。当前是可配置登录骨架、同步框架和开发 mock，不能宣称已支持真实 Dora 业务采集。
 
-需要 Go 1.25+（当前依赖版本）。SQLite 使用纯 Go 驱动，无需 CGO。
+## 功能
 
-前端需要 Node.js 22.12+ 和 pnpm。首次执行 `pnpm --dir web install`，然后 `make build` 会先构建 React 到 `web/dist`，再将静态资源嵌入 `bin/ticket-hub`。构建产物不提交；只运行后端测试无需 Node.js，未构建时保留静态占位。
+- 中文响应式工作台：桌面侧栏和表格，手机底部导航和卡片；筛选、分页/滚动加载、工单详情、事件时间线、原始 JSON。
+- 手机工单首屏使用一行搜索和筛选按钮；详细条件放入底部抽屉。个人资料、密码、订阅、跨午夜免打扰、紧急突破、群 @。
+- SSE 实时站内消息、未读角标、已读、可选浏览器通知。
+- 管理：站点品牌、用户、IMAP/SMTP、上游账号、采集调度、邮件触发规则、通知渠道、规则与模板预览、发送/同步/审计日志。
+- 五类 Sender：阿里云短信、SMTP、企业微信机器人、飞书机器人、站内消息。配置密钥 AES-GCM 加密落库，API 打码。
+- 通知队列：匹配规则与订阅、去重、免打扰、限频延迟、失败重试、超时恢复。外部发送为至少一次语义，网络异常下可能重复。
+- SQLite（纯 Go，无需 CGO）/PostgreSQL、可选 Redis、HttpOnly Cookie/JWT、登录限次、角色权限、会话失效和管理审计。
 
-通过环境变量设置 `.env.example` 中的配置后执行 `make run`。程序不自动读取 `.env`，没有默认管理员密码；首次启动数据库无用户时必须提供管理员用户名与 12~72 字节密码。`APP_SECRET_KEY` 至少 32 字节，建议使用随机生成的高熵密钥，切勿提交到仓库。
+## 架构
 
-- 默认 `DB_TYPE=sqlite`、`DB_DSN=./data.db`，启动时 AutoMigrate。
-- PostgreSQL：`DB_TYPE=postgres`，`DB_DSN=postgres://用户:密码@地址/库名?sslmode=require`。
-- `REDIS_URL` 为空使用进程内缓存；多实例部署必须连接同一个 Redis，否则黑名单、锁、计数和广播无法共享。
-- `COOKIE_SECURE=true` 用于 HTTPS 生产环境；默认监听 `:8080`。
-- 默认会话 24 小时，可在站点设置中更改（1~720 小时），对新登录生效。
-- 修改密码、重置密码、编辑或禁用用户后，该用户已有会话失效；至少保留一个启用管理员。
-- 内存版缓存重启会丢失退出黑名单和限次记录；生产 Redis 黑名单同样需配置持久化，避免退出的旧 JWT 在缓存丢失后重新生效。
+```text
+IMAP 验证码/通知邮件 ─┐
+定时调度/手动同步 ────┴→ 上游登录状态机 → Collector → Ticket.Upsert
+                                                       │
+                                             工单事件 → 规则/订阅
+                                                       │
+                                           notify_jobs + 可靠队列
+                                                       │
+                                        worker → 五类 Sender → SSE
 
-## 接口约定
+浏览器 → React 按路由懒加载 → Gin API / Go embed 静态资源
+                             ├─ GORM → SQLite 或 PostgreSQL
+                             └─ cache/queue → 内存或 Redis
+```
 
-统一响应：`{"code":"ok","message":"成功","data":...}`；失败使用对应 HTTP 状态码及错误 `code`，不暴露数据库细节。
+前端独立路由动态导入、第三方依赖分块，不提高构建告警阈值。Go 二进制内嵌前端，无需独立静态服务器。Redis 实现缓存、锁、计数、Pub/Sub 和 Stream 消费组；未配置时使用单进程内存实现。多实例需共享 PostgreSQL 和 Redis。
 
-| 方法、路径 | 说明 |
+## 快速开始：本地 SQLite
+
+需要 Go 1.25.1+、Node.js 24、pnpm 12.16.1（版本见 `web/package.json`）。
+
+```sh
+cp .env.example .env
+# 编辑 .env：填写 APP_SECRET_KEY、ADMIN_USERNAME、ADMIN_PASSWORD。
+# 建议 APP_SECRET_KEY 用 openssl rand -hex 32，密码用 openssl rand -hex 24。
+chmod 600 .env
+set -a
+. ./.env
+set +a
+pnpm --dir web install --frozen-lockfile
+make build
+./bin/ticket-hub
+```
+
+打开 `http://127.0.0.1:8080`，用配置的管理员登录。默认 SQLite 在当前目录 `data.db`。程序**不自动加载 `.env`**，本地示例显式加载；Compose 自动读取同目录 `.env`。首次无用户才创建管理员，修改环境变量不会重置已有密码。
+
+开发可运行 `make run`，另一个终端 `pnpm --dir web dev`。Vite `/api` 代理到 `127.0.0.1:8080` 并保留 Host，通过后端同源校验；本地 HTTP 保持 `COOKIE_SECURE=false`。
+
+## 快速开始：Docker Compose
+
+需要 Docker Engine 和 Compose v2+；宿主机无需安装 Go/Node，所有基础镜像使用官方 Docker Hub 名称。
+
+```sh
+cp .env.example .env
+# 编辑 .env，APP_SECRET_KEY、ADMIN_PASSWORD、POSTGRES_PASSWORD 必填。
+# PG 密码建议 openssl rand -hex 24，避免连接 URL 的特殊字符。
+chmod 600 .env
+docker compose up -d --build
+docker compose ps
+curl --fail http://127.0.0.1:8080/healthz
+```
+
+默认启动 app + postgres:16 + redis:7，app 等待 PG/Redis 健康。仅 app 端口映射到 `127.0.0.1:8080`，数据库和 Redis 不暴露宿主端口。PG、Redis AOF、应用目录均使用命名卷。
+
+镜像为 Node 前端构建 → Go `CGO_ENABLED=0` 编译 → Alpine 运行三个阶段，运行 UID/GID 为 10001，包含 CA 证书和时区数据。Compose 根文件系统只读，`/tmp` 使用 tmpfs，应用数据目录可写。app 的 `/healthz` 同时检查数据库和缓存。
+
+主 Compose 固定使用容器内 PG/Redis 地址，忽略 `.env` 中的本地 `DB_TYPE/DB_DSN/REDIS_URL`。`APP_PORT` 修改宿主端口，`APP_BIND` 默认本机；远程生产访问请通过 HTTPS 反向代理、保留 Host、支持 SSE 长连接，并设置 `COOKIE_SECURE=true`，不要直接暴露数据库。
+
+```sh
+docker compose logs -f app
+docker compose down
+# down 保留命名卷；down -v 会删除数据库，慎用。
+```
+
+### SQLite 精简部署
+
+独立的 `compose.sqlite.yml` 只启动 app，**不要叠加主 Compose 文件**：
+
+```sh
+# .env 仅需 APP_SECRET_KEY、ADMIN_USERNAME、ADMIN_PASSWORD，不需要 PG 密码。
+docker compose -f compose.sqlite.yml -p ticket-hub-sqlite up -d --build
+curl --fail http://127.0.0.1:8080/healthz
+docker compose -f compose.sqlite.yml -p ticket-hub-sqlite down
+```
+
+SQLite 保存在 `sqlite-data` 命名卷，使用内存缓存/队列，适合单实例小规模部署。和主部署同时运行时设置不同的 `APP_PORT`；不能让多个实例共享 SQLite 文件或依赖内存锁。
+
+## 配置项
+
+完整示例见 `.env.example`。不要提交 `.env`、密钥、Cookie 或邮箱授权码。
+
+| 变量 | 默认值 / 说明 |
 | --- | --- |
-| `GET /healthz` | 检查数据库和缓存 |
-| `POST /api/auth/login` | `{username,password}`，返回用户并设置 HttpOnly / SameSite=Lax Cookie，不返回 JWT 正文 |
-| `POST /api/auth/logout` | 拉黑当前 jti，清除 Cookie |
-| `GET /api/auth/me` | 当前用户 |
-| `PUT /api/auth/password` | `{old_password,new_password}`，成功后需重新登录 |
-| `GET /api/admin/users` | 分页与 `username` 精确、`role`、`enabled` 筛选 |
-| `POST /api/admin/users` | `{username,password,display_name,role,phone,email,enabled}`，enabled 默认 true |
-| `GET /api/admin/users/:id` | 用户详情 |
-| `PUT /api/admin/users/:id` | 用户资料替换，必填 username/role；enabled 省略时保留；不接受密码修改 |
-| `DELETE /api/admin/users/:id` | 删除用户 |
-| `POST /api/admin/users/:id/reset-password` | `{password}` |
-| `PUT /api/admin/users/:id/disable` | 禁用；重新启用使用用户更新接口 |
-| `GET /api/admin/settings` | 默认值与缓存读取 |
-| `PUT /api/admin/settings` | 整体更新 `{site_name,logo_url,public_url,session_hours}`，写后失效缓存 |
-| `GET /api/admin/audit-logs` | 审计列表，倒序分页 |
+| `LISTEN_ADDR` | 本地 `:8080`；容器固定监听 8080 |
+| `DB_TYPE` | 本地 `sqlite` 或 `postgres` |
+| `DB_DSN` | 本地默认 `./data.db`；PG 使用 `postgres://用户:密码@主机:端口/库?sslmode=require` |
+| `REDIS_URL` | 空为内存；多实例需同一 Redis，生产应持久化 |
+| `APP_SECRET_KEY` | 必填，至少 32 字节高熵密钥，派生 AES/JWT 密钥；必须安全备份，更换影响会话和加密数据 |
+| `ADMIN_USERNAME` | 首次启动管理员名 |
+| `ADMIN_PASSWORD` | 首次必填，12~72 字节；已有用户时忽略 |
+| `COOKIE_SECURE` | 默认 false，HTTPS 生产必须 true |
+| `DEV_MODE` | 默认 false；true 开放管理员假工单注入、mock 上游/采集器 |
+| `TEST_PG_DSN` / `TEST_REDIS_URL` | 专用集成测试连接，不得指向生产 |
+| `POSTGRES_USER` / `POSTGRES_DB` | Compose 默认 `ticket` / `ticket_hub` |
+| `POSTGRES_PASSWORD` | 主 Compose 必填，建议随机十六进制密码 |
+| `APP_BIND` / `APP_PORT` | Compose 默认 `127.0.0.1` / `8080` |
 
-分页参数 `page=1&page_size=20`，每页最大 100。管理写操作与审计记录处于同一数据库事务，审计只记录操作、对象、操作者和来源 IP，不记录密码。
+站点名、Logo、对外访问地址和会话时长在管理后台设置。会话默认 24 小时，修改时长对新登录生效；重置密码、管理更新/禁用账号会使旧会话失效。登录同用户名 5 次失败/15 分钟限次，至少保留一个启用管理员。
 
-同用户名登录失败 5 次后，在首次失败起 15 分钟窗口内禁止继续尝试。登录与会话验证在缓存故障时拒绝放行。Cookie 只接受同源请求，不启用跨域；写请求检查 Origin 和 Sec-Fetch-Site。反向代理不信任客户端伪造的 X-Forwarded-For，代理需保留正确 Host。
+Cookie 为 HttpOnly/SameSite=Lax，写请求检查 Origin/Sec-Fetch-Site，不支持跨域。反向代理需保留 Host。退出黑名单依赖缓存，内存重启会丢失；生产 Redis 需持久化。Pub/Sub 不是可靠任务队列，SSE 重连后重新查询通知列表补齐消息。
 
-## 静态资源
+## 上游对接现状
 
-`web/dist` 通过 embed 打包。未来构建前端后，非 `/api` 的 GET/HEAD 请求找不到资源时回退 `index.html`。本步只有占位文本，没有 index.html，因此未构建页面返回 404 JSON，接口路径绝不回退前端。
+预注册十四类：故障维修、服务器下架、服务器改配、物流、巡检、机柜操作、协查、入室、事故复盘、机柜上下电、安全、事件、维护、变更。
 
-## 缓存与加密
+- Dora Authenticator 具备可配置发码/验码骨架、CSRF、加密 Cookie Jar、保活和状态机，请求细节仍待真实抓包确认。
+- **真实 Dora Collector 未实现**，明确返回“未实现，待抓包”；不会猜测或调用业务接口。
+- 已有 IMAP IDLE/轮询、MIME 解析、验证码等待、邮件触发、登录锁、三次失败告警、同步去抖/退避和日志。
+- 开发联调：`DEV_MODE=true`，创建 mock 上游并登录，启用多个 kind 的 mock 采集器；建立 inapp 渠道和指向管理员的规则即可观察工单和消息。不要启用真实外部渠道。
+- 真实接入前需要授权抓取列表/分页/筛选/详情及会话保活请求，核对权限、状态枚举和字段，再实现只读 Collector。
 
-`internal/cache.Cache` 包括 Get/Set/Del、带所有权令牌的 Lock/Unlock、固定窗口 Incr、Pub/Sub。TTL 必须为正数。锁过期后旧持有者不能删除新锁；锁不自动续租。Pub/Sub 为临时广播、不是持久队列；内存订阅缓冲 64 条，慢消费者可能丢消息，不用于可靠任务传递。
+## 目录结构
 
-`internal/crypto.New(APP_SECRET_KEY)` 派生独立用途的 AES-256-GCM 密钥，Encrypt/Decrypt 使用随机 nonce 和认证数据。JWT 签名使用另一用途派生密钥。渠道密钥加密落库、API 打码回显。
+```text
+cmd/server/                服务入口和生命周期
+internal/api/              鉴权、工单、管理、SSE API
+internal/auth,crypto/      JWT、密码、AES-GCM
+internal/cache,queue/      内存/Redis、Stream 队列
+internal/config,db,model/  配置、迁移、模型
+internal/ticket,notifier/  Upsert、事件、通知分发
+internal/sender/           五类渠道
+internal/mailwatch/        IMAP、MIME、验证码、邮件触发
+internal/upstream/         登录状态机与 Authenticator
+internal/collector,syncer/ 注册表、采集接口、调度
+web/src/                   独立路由页面、管理表单、响应式样式
+web/scripts/               Chromium 截图与联调
+web/dist/                  Vite 产物，Go embed，不提交产物
+docs/                      设计和模块说明
+.github/workflows/ci.yml   Go/前端校验、Docker 构建（不推送）
+```
 
-## 校验
+## 测试与 CI
 
 ```sh
 go vet ./... && go test ./...
-# PostgreSQL 使用测试专用数据库，AutoMigrate 创建表，测试写入在事务结束时回滚。
-TEST_PG_DSN='postgres://...' go test ./internal/api -run TestPostgresHandlers -v
-TEST_PG_DSN='postgres://...' TEST_REDIS_URL='redis://127.0.0.1:6379/15' go test ./...
-TEST_PG_DSN='postgres://...' TEST_REDIS_URL='redis://127.0.0.1:6379/15' go test -v ./... -run 'PG|Postgres|Redis'
+pnpm --dir web lint && pnpm --dir web build
+# 使用专用测试库和 Redis：
+TEST_PG_DSN='postgres://...' TEST_REDIS_URL='redis://...' go test -count=1 -v ./...
+go install github.com/rhysd/actionlint/cmd/actionlint@latest
+actionlint .github/workflows/ci.yml
 ```
 
-handler 测试使用 SQLite 内存数据库和内存缓存，覆盖登录、退出后旧令牌拒绝、限次、权限、密码变更、用户增删改查/禁用/重置、最后管理员保护、设置缓存、审计与错误请求。另有缓存和 AES-GCM 工具测试。
+GitHub Actions 在 push/PR 时运行 Go vet、完整测试（真实 PG/Redis services）、前端 lint/TypeScript/build；通过后构建 Docker 镜像，**不推送**。渠道测试使用本地 HTTP/SMTP/IMAP 桩，不需要真实外部凭据。
+
+Chromium 截图：准备 mock 工单和站内规则，在环境中提供 `ADMIN_PASSWORD`，执行 `pnpm --dir web exec playwright install chromium`、`pnpm --dir web screenshots`，默认输出 `~/ticket-hub-validation/screens/`，不进仓库。
+
+API 统一返回 `{code,message,data}`，分页 `page/page_size`（最多 100）。详见 [通知说明](docs/notifications.md)、[上游说明](docs/upstream.md)、[前端说明](docs/frontend.md)、[原始设计](docs/design.md)。

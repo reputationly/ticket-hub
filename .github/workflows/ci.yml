@@ -1,0 +1,64 @@
+name: 持续集成
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  backend:
+    name: 后端与真实存储测试
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: docker.io/library/postgres:16
+        env:
+          POSTGRES_USER: ticket
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_DB: ticket_hub_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ticket -d ticket_hub_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: docker.io/library/redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_PG_DSN: postgres://ticket:ci-test-password@127.0.0.1:5432/ticket_hub_test?sslmode=disable
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - run: go test -count=1 -v ./...
+  frontend:
+    name: 前端检查与构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - run: pnpm --dir web install --frozen-lockfile
+      - run: pnpm --dir web lint
+      - run: pnpm --dir web build
+  docker:
+    name: 容器构建（不推送）
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: ticket-hub:ci

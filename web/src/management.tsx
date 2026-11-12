@@ -1,24 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  DatePicker,
-  Drawer,
-  Empty,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Pagination,
-  Popconfirm,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  message,
-} from "antd";
+import Alert from "antd/es/alert";
+import Button from "antd/es/button";
+import Card from "antd/es/card";
+import DatePicker from "antd/es/date-picker";
+import Drawer from "antd/es/drawer";
+import Empty from "antd/es/empty";
+import Form from "antd/es/form";
+import Input from "antd/es/input";
+import InputNumber from "antd/es/input-number";
+import Modal from "antd/es/modal";
+import Pagination from "antd/es/pagination";
+import Popconfirm from "antd/es/popconfirm";
+import Select from "antd/es/select";
+import Space from "antd/es/space";
+import Switch from "antd/es/switch";
+import Table from "antd/es/table";
+import Tag from "antd/es/tag";
+import message from "antd/es/message";
 import {
   ArrowRightOutlined,
   PlusOutlined,

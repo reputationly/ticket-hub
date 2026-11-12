@@ -1,0 +1,25 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      LISTEN_ADDR: :8080
+      DB_TYPE: sqlite
+      DB_DSN: /data/ticket-hub.db
+      REDIS_URL: ""
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?请设置 APP_SECRET_KEY}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请设置 ADMIN_PASSWORD}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      DEV_MODE: ${DEV_MODE:-false}
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080"
+    volumes:
+      - sqlite-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  sqlite-data:

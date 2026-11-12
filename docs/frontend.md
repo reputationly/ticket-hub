@@ -2,6 +2,8 @@
 
 技术栈：React 18、TypeScript、Vite、Ant Design 5、React Router、pnpm。所有接口由 `src/api.ts` 的 fetch 封装调用，携带 HttpOnly Cookie，401 清理登录态并跳转登录页；没有本地存储 JWT。
 
+用户页面按路由独立动态导入，管理页复用一个延迟加载模块。Ant Design 按组件导入、依赖按包分块，公共主题/表单上下文放在同一 chunk 避免循环。Go embed 使用 `all:dist`，包含构建工具生成的下划线开头公共模块。手机工单页保留一行快捷搜索和筛选按钮，详细筛选复用同一张表单放入底部全屏抽屉。
+
 ## 开发与构建
 
 ```sh

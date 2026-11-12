@@ -20,12 +20,11 @@ func (s *Server) catalog(c *gin.Context) {
 		kinds = append(kinds, gin.H{"value": k.Kind, "label": k.Name})
 	}
 	sites, statuses := []string{}, []string{}
-	q := s.db.WithContext(c.Request.Context()).Model(&model.Ticket{})
-	if e := q.Distinct("site").Where("site <> ?", "").Order("site").Pluck("site", &sites).Error; e != nil {
+	if e := s.db.WithContext(c.Request.Context()).Model(&model.Ticket{}).Distinct("site").Where("site <> ?", "").Order("site").Pluck("site", &sites).Error; e != nil {
 		internal(c)
 		return
 	}
-	if e := q.Distinct("status").Where("status <> ?", "").Order("status").Pluck("status", &statuses).Error; e != nil {
+	if e := s.db.WithContext(c.Request.Context()).Model(&model.Ticket{}).Distinct("status").Where("status <> ?", "").Order("status").Pluck("status", &statuses).Error; e != nil {
 		internal(c)
 		return
 	}

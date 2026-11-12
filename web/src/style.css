@@ -70,7 +70,21 @@ p {
   gap: 20px;
   color: #819088;
 }
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+}
+.app-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 224px;
+  background: #fff;
+  border-right: 1px solid #e6ebe7;
+  pointer-events: none;
+}
 .sidebar {
+  height: 100vh;
   position: fixed;
   inset: 0 auto 0 0;
   width: 224px;
@@ -875,6 +889,9 @@ pre {
   gap: 14px !important;
 }
 @media (min-width: 768px) and (max-width: 1199px) {
+  .app-shell::before {
+    width: 200px;
+  }
   .sidebar {
     width: 200px;
   }
@@ -901,6 +918,18 @@ pre {
   }
 }
 @media (max-width: 767px) {
+  .app-shell::before {
+    display: none;
+  }
+  .mobile-ticket-search {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .mobile-ticket-search .ant-input-search {
+    flex: 1;
+    min-width: 0;
+  }
   h1 {
     font-size: 23px;
   }
@@ -968,14 +997,22 @@ pre {
   }
   .summary-strip {
     grid-template-columns: 1fr 1fr;
-    padding: 18px 14px;
+    padding: 12px 14px;
     margin-bottom: 16px;
   }
   .summary-strip .summary-note {
     display: none;
   }
   .summary-strip > div {
-    gap: 10px;
+    gap: 6px;
+  }
+  .summary-strip > div > div {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .summary-strip .metric-icon {
+    display: none;
   }
   .summary-strip > div + div {
     padding-left: 18px;
@@ -987,7 +1024,7 @@ pre {
     border-radius: 9px;
   }
   .summary-strip strong {
-    font-size: 24px;
+    font-size: 20px;
   }
   .summary-strip small {
     font-size: 10px;

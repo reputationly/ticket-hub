@@ -4,6 +4,7 @@
 *.db
 *.db-*
 *.sqlite*
+!compose.sqlite.yml
 /bin/
 /coverage*
 /web/node_modules/
